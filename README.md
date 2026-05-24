@@ -38,7 +38,7 @@ Built for coaches, sports scientists, and serious athletes who need more than a 
 | **📡 LIVE WEBCAM** | Real-time webcam analysis with live charts, voice coaching, and HUD overlays |
 | **👥 MULTI-ATHLETE** | Tracks up to 5 athletes simultaneously using YOLOv8 + individual LSTM scoring |
 | **📁 SESSION HISTORY** | Archive of past sessions with trend charts and movement quality breakdowns |
-| **📊 COMPARE SESSIONS** | Overlay any two sessions — performance delta, cadence comparison, quality pie charts |
+| **📊 COMPARE SESSIONS** | Overlay any two sessions - performance delta, cadence comparison, quality pie charts |
 
 ---
 
