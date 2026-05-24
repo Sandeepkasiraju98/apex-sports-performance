@@ -24,7 +24,7 @@
 
 ## 🎯 What is APEX?
 
-APEX is a **cinematic-grade sports performance analytics platform** that analyzes athletes in real time — from uploaded video or live webcam — using a full ML pipeline: pose extraction → biomechanical feature engineering → LSTM-based fatigue & performance prediction → injury risk scoring → explainable AI attribution.
+APEX is a **cinematic-grade sports performance analytics platform** that analyzes athletes in real time, from uploaded video or live webcam, using a full ML pipeline: pose extraction → biomechanical feature engineering → LSTM-based fatigue & performance prediction → injury risk scoring → explainable AI attribution.
 
 Built for coaches, sports scientists, and serious athletes who need more than a stopwatch.
 
@@ -265,13 +265,6 @@ Enable/disable via the sidebar toggle. Works with any TTS-capable system.
 ## 👤 Author
 
 **Sandeep Kasiraju**
-Data Scientist · ML Engineer · AWS Certified ML Engineer (MLA-C01)
-
-[![Email](https://img.shields.io/badge/Email-sandeepkasiraju793%40gmail.com-00d2ff?style=flat-square&logo=gmail)](mailto:sandeepkasiraju793@gmail.com)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077b5?style=flat-square&logo=linkedin)](https://linkedin.com/in/yourprofile)
-[![GitHub](https://img.shields.io/badge/GitHub-Portfolio-2ed573?style=flat-square&logo=github)](https://github.com/yourusername)
-
----
 
 <div align="center">
 
