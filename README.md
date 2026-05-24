@@ -254,7 +254,7 @@ Enable/disable via the sidebar toggle. Works with any TTS-capable system.
 
 ## 📈 Roadmap
 
-- [ ] Export session reports as PDF
+- [ ] Export session reports as excel spreadsheet
 - [ ] Sport-specific models (sprint, cycling, swimming)
 - [ ] Team dashboard with multi-session aggregation
 - [ ] REST API endpoint for integration with wearables
