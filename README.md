@@ -17,6 +17,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-LSTM-ff4757?style=flat-square&logo=pytorch&logoColor=white)](https://pytorch.org)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-Pose-2ed573?style=flat-square)](https://mediapipe.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-ffa502?style=flat-square)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-▶%20Open%20App-2ed573?style=flat-square&logo=streamlit&logoColor=white)](https://apex-sports-performance-jqctmuwplfsq5lrr9rvjf5.streamlit.app/)
 
 </div>
 
