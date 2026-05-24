@@ -8,3 +8,4 @@ mediapipe==0.10.9
 ultralytics>=8.1.0
 gTTS>=2.5.0
 pydub>=0.25.0
+lap>=0.4.0
