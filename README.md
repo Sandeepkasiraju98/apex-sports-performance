@@ -8,7 +8,7 @@
  ▀  ▀ .▀    ▀▀▀ .▀
 ```
 
-# ⚡ APEX — Sports Performance AI
+# ⚡ APEX - Sports Performance AI
 
 **Real-time athlete analysis powered by pose estimation, LSTM prediction, and explainable AI**
 
