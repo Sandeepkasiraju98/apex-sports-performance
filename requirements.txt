@@ -4,7 +4,7 @@ numpy>=1.26.0
 pandas>=2.2.0
 plotly>=5.20.0
 torch>=2.2.0
-mediapipe>=0.10.0
+mediapipe==0.10.9
 ultralytics>=8.1.0
 gTTS>=2.5.0
 pydub>=0.25.0
