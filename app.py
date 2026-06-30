@@ -974,6 +974,24 @@ _LANDMARK_IDX = {
     'left_ankle': 27, 'right_ankle': 28,
 }
 
+# ── Detect a headless/cloud host (no local webcam available). ──
+# Streamlit Community Cloud runs the script on a headless Linux server
+# with no camera, so cv2.VideoCapture(0) yields no frames. We use this to
+# show an explainer on the LIVE WEBCAM page instead of a dead feed.
+def is_cloud_runtime() -> bool:
+    # Streamlit Cloud mounts the repo under /mount/src and sets HOME to an
+    # adminuser venv path; either signal is a reliable tell. The generic
+    # env override lets anyone force-disable webcam if needed.
+    if os.environ.get("APEX_DISABLE_WEBCAM") == "1":
+        return True
+    if os.path.isdir("/mount/src"):
+        return True
+    home = os.environ.get("HOME", "")
+    if "adminuser" in home or "appuser" in home:
+        return True
+    return False
+
+
 def pose_frame_to_dict(pf):
     """PoseFrame -> {joint_name: (x, y, visibility)} for the new engines."""
     if pf is None or not getattr(pf, "valid", False):
@@ -1663,6 +1681,34 @@ elif page == "LIVE WEBCAM":
   <div class="apex-sub">Real-Time Webcam Analysis</div>
 </div>
 """, unsafe_allow_html=True)
+
+    if is_cloud_runtime():
+        # No camera on a headless cloud host — explain rather than hang.
+        st.markdown("""
+<div class="trouble-box">
+  <b>LIVE WEBCAM RUNS LOCALLY</b><br><br>
+  This app is hosted on a server with no camera attached, so the live
+  feed can't run here. The full real-time pipeline — pose tracking,
+  fatigue &amp; injury scoring, stride detection, and coaching cues —
+  works when you run APEX on your own machine:<br><br>
+  <b>1.</b> &nbsp;<span style="color:#7ab8c8">git clone</span> the repo
+  &nbsp;<span style="color:#3d5a6e">github.com/sandeepkasiraju98/apex-sports-performance</span><br>
+  <b>2.</b> &nbsp;<span style="color:#7ab8c8">pip install -r requirements.txt</span><br>
+  <b>3.</b> &nbsp;<span style="color:#7ab8c8">streamlit run app.py</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;then open <b>LIVE WEBCAM</b> — it'll use your
+  camera.<br><br>
+  <b>Prefer to stay here?</b> The <b>ANALYZE VIDEO</b> page runs the exact
+  same analysis on an uploaded clip and works fully in the cloud.
+</div>
+""", unsafe_allow_html=True)
+
+        if st.button("⚡ GO TO ANALYZE VIDEO"):
+            st.session_state["_webcam_redirect"] = True
+            st.info(
+                "Pick ANALYZE VIDEO from the sidebar to upload a running "
+                "clip and see the full pipeline.")
+
+        st.stop()  # nothing below this runs on cloud
 
     c1, c2, c3 = st.columns(3)
     with c1:
