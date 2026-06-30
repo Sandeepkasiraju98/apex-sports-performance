@@ -88,7 +88,14 @@ class PoseExtractor:
             num_poses=1,
         )
         self.landmarker   = vision.PoseLandmarker.create_from_options(options)
-        self._last_ts_ms  = 0   # tracks last timestamp sent to MediaPipe
+        # Tracks the last timestamp sent to MediaPipe. This MUST stay
+        # monotonic for the entire LIFETIME of the landmarker, because the
+        # landmarker is created once and reused across Streamlit reruns and
+        # across multiple videos. MediaPipe's VIDEO running mode keeps its
+        # own internal clock and rejects any timestamp <= the previous one
+        # with a ValueError. Therefore we deliberately do NOT reset this
+        # counter when a new video starts (see process_video / process_webcam).
+        self._last_ts_ms  = 0
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -132,9 +139,9 @@ class PoseExtractor:
                       timestamp: float = 0.0) -> PoseFrame:
         """Extract keypoints from a single BGR frame."""
         mp_image = self._to_mp_image(frame)
-        # Guarantee monotonically increasing ms timestamp.
-        # If the extractor is reused across Streamlit reruns the raw
-        # frame-derived timestamp would reset to 0 and MediaPipe throws.
+        # Guarantee a strictly increasing ms timestamp. Even if the caller
+        # passes a timestamp that resets to 0 (new video) or repeats (some
+        # codecs), we force it above the last value the landmarker has seen.
         ts_ms = max(int(timestamp * 1000), self._last_ts_ms + 1)
         self._last_ts_ms = ts_ms
         result = self.landmarker.detect_for_video(mp_image, ts_ms)
@@ -172,7 +179,10 @@ class PoseExtractor:
         cap      = cv2.VideoCapture(video_path)
         fps      = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_id = 0
-        self._last_ts_ms = 0   # reset for each new video
+        # NOTE: do NOT reset self._last_ts_ms here. The landmarker's internal
+        # clock persists across runs; resetting would send a timestamp the
+        # graph has already passed and raise ValueError. extract_frame keeps
+        # timestamps monotonic on its own via _last_ts_ms + 1.
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -200,7 +210,8 @@ class PoseExtractor:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         fps      = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_id = 0
-        self._last_ts_ms = 0   # reset for each new webcam session
+        # NOTE: do NOT reset self._last_ts_ms here (same reason as
+        # process_video above). The landmarker's clock is monotonic for life.
 
         while cap.isOpened():
             ret, frame = cap.read()
