@@ -76,9 +76,27 @@ html, body, [data-testid="stAppViewContainer"],
   border-right: 1px solid var(--border);
 }
 
-/* Hide default Streamlit branding */
-#MainMenu, footer, header { visibility: hidden; }
+/* Hide default Streamlit branding (NOT the header — it holds the
+   sidebar collapse/expand arrow, so hiding it strands a collapsed
+   sidebar with no way to reopen it). */
+#MainMenu, footer { visibility: hidden; }
 [data-testid="stToolbar"] { display: none; }
+
+/* ── Keep the sidebar and its toggle reachable at all times ── */
+/* Streamlit collapses the sidebar by translating it off-screen; forcing
+   transform:none keeps it on-screen even in the collapsed state. */
+[data-testid="stSidebar"] {
+  transform: none !important;
+  visibility: visible !important;
+}
+/* The collapse/expand arrow. The test id changed across Streamlit
+   versions, so target both spellings. */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+  visibility: visible !important;
+  display: flex !important;
+  z-index: 9999 !important;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 3px; }
