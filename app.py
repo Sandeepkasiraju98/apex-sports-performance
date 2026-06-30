@@ -278,6 +278,40 @@ html, body, [data-testid="stAppViewContainer"],
   border-radius: 0 4px 4px 0;
 }
 
+/* ── Coaching cue cards ── */
+.cue-card {
+  border-left: 3px solid var(--cyan);
+  padding: 12px 16px;
+  margin: 8px 0;
+  border-radius: 0 4px 4px 0;
+  background: rgba(0,210,255,0.04);
+}
+.cue-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+.cue-fix {
+  font-family: var(--body);
+  font-size: 14px;
+  color: var(--text);
+  margin: 6px 0 4px;
+  font-weight: 500;
+}
+.cue-drill {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #7ab8c8;
+}
+.cue-why {
+  font-family: var(--body);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-style: italic;
+}
+
 /* ── Upload zone ── */
 [data-testid="stFileUploader"] {
   background: var(--card) !important;
@@ -586,6 +620,14 @@ def init_state():
         'webcam_proc':      None,
         'webcam_running':   False,
         'last_importance':  None,
+        # ── Upgrade: new engines + their rolling state ──
+        'cue_engine':       None,
+        'gait_analyzer':    None,
+        'track_monitor':    None,
+        'gait_history':     deque(maxlen=300),
+        'last_cues':        [],
+        'last_track':       None,
+        'source_fps':       None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -608,6 +650,10 @@ def load_models(voice_enabled=False):
         st.session_state.explainer      = GradientExplainer(
             st.session_state.analyzer)
         st.session_state.multi_tracker  = MultiAthleteTracker(mp)
+        # ── Upgrade: instantiate the new engines ──
+        st.session_state.cue_engine    = CorrectiveCueEngine()
+        st.session_state.gait_analyzer = GaitPhaseAnalyzer()
+        st.session_state.track_monitor = TrackingConfidenceMonitor()
         st.session_state.models_loaded  = True
 
 
@@ -754,6 +800,47 @@ def build_injury_bars(report):
     return fig
 
 
+def build_gait_chart():
+    """Ground-contact-time L vs R over the session + asymmetry band."""
+    hist = list(st.session_state.gait_history)
+    if not hist:
+        fig = go.Figure()
+        fig.update_layout(
+            height=200, **PLOTLY_LAYOUT,
+            annotations=[dict(
+                text='GATHERING STRIDES',
+                x=0.5, y=0.5, xref='paper', yref='paper',
+                font=dict(family='Bebas Neue', size=20,
+                          color='rgba(0,210,255,0.2)'),
+                showarrow=False
+            )]
+        )
+        return fig
+
+    idx = list(range(len(hist)))
+    lc  = [h['contact_time_left_ms']  for h in hist]
+    rc  = [h['contact_time_right_ms'] for h in hist]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=idx, y=lc, name='CONTACT L',
+        line=dict(color='#00d2ff', width=2),
+        hovertemplate='%{y:.0f} ms<extra>Left</extra>'
+    ))
+    fig.add_trace(go.Scatter(
+        x=idx, y=rc, name='CONTACT R',
+        line=dict(color='#a55eea', width=2),
+        hovertemplate='%{y:.0f} ms<extra>Right</extra>'
+    ))
+    fig.update_layout(
+        height=200,
+        yaxis=dict(title='ms', **PLOTLY_LAYOUT['yaxis']),
+        xaxis=dict(title='sample', **PLOTLY_LAYOUT['xaxis']),
+        **{k:v for k,v in PLOTLY_LAYOUT.items()
+           if k not in ('xaxis','yaxis')}
+    )
+    return fig
+
+
 def build_comparison(compare):
     df_a = compare['df_a']
     df_b = compare['df_b']
@@ -823,6 +910,44 @@ def build_quality_pie(df):
         showlegend=True
     )
     return fig
+
+
+def render_cues(placeholder, cues):
+    """Render the top corrective cues into a placeholder."""
+    if not cues:
+        placeholder.markdown(
+            '<div class="rec-box">FORM LOOKS CLEAN — '
+            'no corrections needed.</div>',
+            unsafe_allow_html=True
+        )
+        return
+    html = ""
+    for c in cues[:3]:
+        html += f"""
+<div class="cue-card" style="border-left-color:{c['color']}">
+  <div class="cue-tag" style="color:{c['color']}">
+    {c['severity']} · {c['headline']} · {c['metric_value']}</div>
+  <div class="cue-fix">{c['fix']}</div>
+  <div class="cue-drill">▸ {c['drill']}</div>
+  <div class="cue-why">{c['why']}</div>
+</div>"""
+    placeholder.markdown(html, unsafe_allow_html=True)
+
+
+def render_tracking(placeholder, track):
+    """Render the tracking-confidence gauge into a placeholder."""
+    if track is None:
+        placeholder.empty()
+        return
+    placeholder.markdown(f"""
+<div class="big-metric"
+     style="--accent-color:{track['color']};--accent-rgb:0,210,255">
+  <div class="big-metric-label">Tracking</div>
+  <div class="big-metric-value" style="font-size:32px">
+    {track['score']*100:.0f}<span class="big-metric-unit">%</span></div>
+  <div class="big-metric-sub">{track['reason']}</div>
+</div>
+""", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════
@@ -895,6 +1020,7 @@ def run_analysis_pipeline(
     voice_enabled,
     video_ph, chart_ph, stride_ph,
     injury_ph, xai_ph,
+    gait_ph=None, cue_ph=None, track_ph=None,
     analyze_every: int = 3
 ):
     extractor      = st.session_state.extractor
@@ -904,78 +1030,125 @@ def run_analysis_pipeline(
     injury_scorer  = st.session_state.injury_scorer
     explainer      = st.session_state.explainer
     multi_tracker  = st.session_state.multi_tracker
+    cue_engine     = st.session_state.cue_engine
+    gait_analyzer  = st.session_state.gait_analyzer
+    track_monitor  = st.session_state.track_monitor
     voice          = VoiceCoach(enabled=voice_enabled)
+    # Cooldown-aware cue gate for voice (so a cue isn't spoken every frame).
+    cue_session    = CueSession(cooldown_s=12)
 
     feature_eng.reset()
     analyzer.reset()
     stride_counter.reset()
     injury_scorer.reset()
+    gait_analyzer.reset()
+    track_monitor.reset()
     if multi_mode:
         multi_tracker.reset()
 
-    t0 = time.time()
+    # ── Upgrade (#7): drive timing off the SOURCE FPS, not wall-clock. ──
+    # On a slow CPU, time.time() stretches and corrupts cadence/stride
+    # timing. media_time(frame_n) stays correct regardless of CPU speed.
+    norm = FPSNormalizer.from_video(video_path)
+    st.session_state.source_fps = norm.info.as_dict()
+
     xai_every = 90
     frame_n   = 0
 
     last_pred   = None
     last_stride = None
     last_injury = None
+    last_gait   = None
 
     for annotated, pose_frame in extractor.process_video(
         video_path
     ):
         should_analyze = (frame_n % analyze_every == 0)
 
+        # ── Upgrade (#6): rate the pose quality EVERY frame. ──
+        track = track_monitor.update(pose_frame)
+        st.session_state.last_track = track.as_dict()
+
         if should_analyze:
+            # Source-accurate media time for this frame.
+            t = round(norm.media_time(frame_n), 2)
+
             features = feature_eng.extract(pose_frame)
             pred     = analyzer.update(features)
             stride   = stride_counter.update(features)
             injury   = injury_scorer.update(features)
+            # ── Upgrade (#2): gait phase metrics from raw landmarks. ──
+            gait     = gait_analyzer.update(pose_frame, t)
 
             last_pred   = pred
             last_stride = stride
             last_injury = injury
+            last_gait   = gait
 
-            voice.analyze_and_coach(
-                fatigue_score=pred.fatigue_score,
-                performance_score=pred.performance_score,
-                movement_quality=pred.movement_quality,
-                injury_risk=injury.overall_risk,
-                cadence=stride.cadence_spm,
+            # ── Upgrade (#1): corrective cues from all signals. ──
+            cues = cue_engine.evaluate(
+                knee_stress=injury.knee_stress,
+                hip_imbalance=injury.hip_imbalance,
+                ankle_instability=injury.ankle_instability,
+                overstriding=injury.overstriding,
+                cadence_spm=stride.cadence_spm,
                 stride_regularity=stride.stride_regularity,
-                fatigue_threshold=fatigue_threshold,
-                perf_threshold=perf_threshold
+                fatigue_score=pred.fatigue_score,
+                vertical_oscillation_cm=gait.vertical_oscillation_cm,
+                gct_asymmetry_pct=gait.gct_asymmetry_pct,
             )
+            st.session_state.last_cues = [c.as_dict() for c in cues]
 
-            t = round(time.time() - t0, 2)
-            st.session_state.fatigue_history.append(
-                pred.fatigue_score)
-            st.session_state.perf_history.append(
-                pred.performance_score)
-            st.session_state.quality_history.append(
-                pred.movement_quality)
-            st.session_state.cadence_history.append(
-                stride.cadence_spm)
-            st.session_state.injury_history.append(
-                injury.overall_risk)
-            st.session_state.stride_history.append(
-                stride.total_strides)
-            st.session_state.timestamps.append(t)
-            st.session_state.frame_count += 1
-
-            for cond, msg in [
-                (pred.fatigue_score > fatigue_threshold,
-                 f"FATIGUE {pred.fatigue_score:.0f} — {t}s"),
-                (pred.performance_score < perf_threshold,
-                 f"PERF DROP {pred.performance_score:.0f} — {t}s"),
-                (injury.risk_level in ('high','critical'),
-                 f"{injury.risk_level.upper()} INJURY RISK — {t}s")
-            ]:
-                if cond and (
-                    not st.session_state.alerts or
-                    st.session_state.alerts[-1] != msg
+            # Voice: only speak newly-due cues (cooldown-gated).
+            if voice_enabled:
+                for c in cue_session.update(
+                    tick=t,
+                    knee_stress=injury.knee_stress,
+                    hip_imbalance=injury.hip_imbalance,
+                    ankle_instability=injury.ankle_instability,
+                    overstriding=injury.overstriding,
+                    cadence_spm=stride.cadence_spm,
+                    stride_regularity=stride.stride_regularity,
+                    fatigue_score=pred.fatigue_score,
+                    vertical_oscillation_cm=gait.vertical_oscillation_cm,
+                    gct_asymmetry_pct=gait.gct_asymmetry_pct,
                 ):
-                    st.session_state.alerts.append(msg)
+                    voice.say(c.fix)
+
+            # ── Upgrade (#6): only log reliable frames into history. ──
+            # Junk tracking (occlusion / out-of-frame) never pollutes
+            # session stats — trustworthiness is a feature.
+            if track.is_reliable:
+                st.session_state.fatigue_history.append(
+                    pred.fatigue_score)
+                st.session_state.perf_history.append(
+                    pred.performance_score)
+                st.session_state.quality_history.append(
+                    pred.movement_quality)
+                st.session_state.cadence_history.append(
+                    stride.cadence_spm)
+                st.session_state.injury_history.append(
+                    injury.overall_risk)
+                st.session_state.stride_history.append(
+                    stride.total_strides)
+                st.session_state.gait_history.append(
+                    gait.as_dict())
+                st.session_state.timestamps.append(t)
+                st.session_state.frame_count += 1
+
+                for cond, msg in [
+                    (pred.fatigue_score > fatigue_threshold,
+                     f"FATIGUE {pred.fatigue_score:.0f} — {t}s"),
+                    (pred.performance_score < perf_threshold,
+                     f"PERF DROP {pred.performance_score:.0f} — {t}s"),
+                    (injury.risk_level in ('high','critical'),
+                     f"{injury.risk_level.upper()} INJURY RISK — {t}s")
+                ]:
+                    if cond and (
+                        not st.session_state.alerts or
+                        st.session_state.alerts[-1] != msg
+                    ):
+                        st.session_state.alerts.append(msg)
 
         if last_pred is not None:
             if multi_mode:
@@ -989,6 +1162,10 @@ def run_analysis_pipeline(
 
         rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
         video_ph.image(rgb, use_container_width=True)
+
+        # Live tracking gauge.
+        if track_ph is not None:
+            render_tracking(track_ph, st.session_state.last_track)
 
         if should_analyze and last_pred is not None:
             chart_ph.plotly_chart(
@@ -1046,6 +1223,42 @@ def run_analysis_pipeline(
                         unsafe_allow_html=True
                     )
 
+            # ── Upgrade (#2): GAIT tab ──
+            if gait_ph is not None and last_gait is not None:
+                g = last_gait.as_dict()
+                with gait_ph.container():
+                    if g["confidence"] >= 0.5:
+                        a1, a2, a3 = st.columns(3)
+                        a1.metric("CONTACT L",
+                                  f"{g['contact_time_left_ms']:.0f} ms")
+                        a2.metric("CONTACT R",
+                                  f"{g['contact_time_right_ms']:.0f} ms")
+                        asym_c = ('🔴' if g['gct_asymmetry_pct'] > 6 else
+                                  '🟡' if g['gct_asymmetry_pct'] > 3 else '🟢')
+                        a3.metric("L/R ASYM",
+                                  f"{g['gct_asymmetry_pct']:.1f} %",
+                                  asym_c)
+                        b1, b2, b3 = st.columns(3)
+                        b1.metric("VERT OSC",
+                                  f"{g['vertical_oscillation_cm']:.1f} cm")
+                        b2.metric("FLIGHT",
+                                  f"{g['flight_ratio']*100:.0f} %")
+                        b3.metric("DUTY",
+                                  f"{g['duty_factor']*100:.0f} %")
+                        st.plotly_chart(
+                            build_gait_chart(),
+                            use_container_width=True,
+                            key=f"gait_{frame_n}"
+                        )
+                    else:
+                        st.caption(
+                            "Gathering strides… need a few seconds "
+                            "of clean tracking.")
+
+            # ── Upgrade (#1): COACHING cues ──
+            if cue_ph is not None:
+                render_cues(cue_ph, st.session_state.last_cues)
+
         # XAI
         if frame_n % xai_every == 0 and \
            len(analyzer.buffer) >= 30:
@@ -1076,8 +1289,10 @@ def run_analysis_pipeline(
 </div>"""
                     st.markdown(bars_html,
                                 unsafe_allow_html=True)
-            except:
-                pass
+            # ── Upgrade (#5): narrow catch + log instead of bare except ──
+            except Exception as exc:
+                st.session_state.last_importance = None
+                print(f"[XAI] importance failed: {exc!r}")
 
         frame_n += 1
 
@@ -1135,13 +1350,20 @@ with st.sidebar:
             'fatigue_history','perf_history',
             'quality_history','cadence_history',
             'injury_history','stride_history',
-            'timestamps','alerts'
+            'timestamps','alerts','gait_history',
         ]:
             s = st.session_state[k]
             if isinstance(s, deque): s.clear()
             elif isinstance(s, list):
                 st.session_state[k] = []
         st.session_state.frame_count = 0
+        st.session_state.last_cues   = []
+        st.session_state.last_track  = None
+        # Reset the rolling engines too, so a new run starts clean.
+        if st.session_state.gait_analyzer is not None:
+            st.session_state.gait_analyzer.reset()
+        if st.session_state.track_monitor is not None:
+            st.session_state.track_monitor.reset()
         st.rerun()
 
     st.markdown("---")
@@ -1234,10 +1456,13 @@ if page == "ANALYZE VIDEO":
 </div>
 """, unsafe_allow_html=True)
         video_ph = st.empty()
+        # Tracking-confidence gauge sits under the feed.
+        track_ph = st.empty()
+        render_tracking(track_ph, st.session_state.last_track)
 
     with right_col:
-        tab1, tab2, tab3 = st.tabs([
-            "TIMELINE", "STRIDES", "INJURY"
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "TIMELINE", "STRIDES", "INJURY", "GAIT"
         ])
         with tab1:
             chart_ph = st.empty()
@@ -1250,6 +1475,25 @@ if page == "ANALYZE VIDEO":
             stride_ph = st.empty()
         with tab3:
             injury_ph = st.empty()
+        with tab4:
+            gait_ph = st.empty()
+            gait_ph.plotly_chart(
+                build_gait_chart(),
+                use_container_width=True,
+                key="gait_init"
+            )
+
+    # ── Upgrade (#1): COACHING section ──
+    st.markdown("""
+<div class="section-head" style="margin-top:24px">
+  <span class="section-head-text">
+    Coaching — Corrective Cues
+  </span>
+  <div class="section-head-line"></div>
+</div>
+""", unsafe_allow_html=True)
+    cue_ph = st.empty()
+    render_cues(cue_ph, st.session_state.last_cues)
 
     st.markdown("""
 <div class="section-head" style="margin-top:24px">
@@ -1298,9 +1542,19 @@ if page == "ANALYZE VIDEO":
             chart_ph=chart_ph,
             stride_ph=stride_ph,
             injury_ph=injury_ph,
-            xai_ph=xai_ph
+            xai_ph=xai_ph,
+            gait_ph=gait_ph,
+            cue_ph=cue_ph,
+            track_ph=track_ph,
         )
         os.unlink(path)
+
+        # Surface the detected source FPS (proves the timing is honest).
+        if st.session_state.source_fps:
+            sf = st.session_state.source_fps
+            st.caption(
+                f"SOURCE · {sf['fps']:.0f} fps ({sf['source']})  ·  "
+                f"timing normalized to media-time")
 
         if st.session_state.alerts:
             alert_ph.markdown(
@@ -1415,6 +1669,8 @@ elif page == "LIVE WEBCAM":
             inj_ph2 = st.empty()
 
         chart_ph2 = st.empty()
+        # ── Upgrade (#1): live coaching cues under the chart ──
+        cue_ph2 = st.empty()
 
         # Drain predictions
         preds = proc.get_predictions()
@@ -1432,6 +1688,22 @@ elif page == "LIVE WEBCAM":
             st.session_state.stride_history.append(
                 p['strides'])
             st.session_state.frame_count += 1
+
+        # ── Upgrade (#1): compute cues from the freshest live values. ──
+        if preds:
+            p = preds[-1]
+            cues = st.session_state.cue_engine.evaluate(
+                knee_stress=p.get('knee_stress'),
+                hip_imbalance=p.get('hip_imbalance'),
+                ankle_instability=p.get('ankle_instability'),
+                overstriding=p.get('overstriding'),
+                cadence_spm=p.get('cadence'),
+                stride_regularity=p.get('stride_regularity'),
+                fatigue_score=p.get('fatigue'),
+                vertical_oscillation_cm=p.get('vertical_oscillation_cm'),
+                gct_asymmetry_pct=p.get('gct_asymmetry_pct'),
+            )
+            st.session_state.last_cues = [c.as_dict() for c in cues]
 
         # Show frame
         frame = proc.get_latest_frame()
@@ -1496,6 +1768,9 @@ elif page == "LIVE WEBCAM":
             use_container_width=True,
             key=f"live_tl_{st.session_state.frame_count}"
         )
+
+        # Render live coaching cues.
+        render_cues(cue_ph2, st.session_state.last_cues)
 
         st.caption(
             f"FPS · {proc.fps_actual:.1f}  ·  "
