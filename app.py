@@ -1425,8 +1425,11 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
 
-
-load_models(voice_enabled=voice_on)
+try:
+    load_models(voice_enabled=voice_on)
+except Exception as exc:
+    st.sidebar.error(f"Model load failed: {exc}")
+    st.error(f"Could not initialize models — check requirements.txt. Details: {exc}")
 
 
 # ══════════════════════════════════════════════════
