@@ -1399,7 +1399,18 @@ with st.sidebar:
 
     st.markdown("---")
 
-    voice_on = st.toggle("VOICE COACH", value=False)
+    # Voice coach plays audio server-side, which only works locally. On a
+    # headless cloud host, disable the toggle and explain — the on-screen
+    # coaching cues deliver the same guidance there.
+    if is_cloud_runtime():
+        st.toggle("VOICE COACH", value=False, disabled=True,
+                  help="Voice plays through your computer's speakers, so it "
+                       "only works when running APEX locally. The on-screen "
+                       "coaching cues show the same guidance here.")
+        voice_on = False
+        st.caption("VOICE · LOCAL ONLY · CUES SHOWN ON SCREEN")
+    else:
+        voice_on = st.toggle("VOICE COACH", value=False)
 
     st.markdown(
         '<p style="font-family:\'JetBrains Mono\';'
