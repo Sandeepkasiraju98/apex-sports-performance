@@ -934,6 +934,34 @@ def render_cues(placeholder, cues):
     placeholder.markdown(html, unsafe_allow_html=True)
 
 
+# ── Upgrade: adapt PoseExtractor's PoseFrame to the name->point dict the
+# gait analyzer and tracking monitor expect. PoseFrame stores a (33,3)
+# keypoints array + (33,) visibility; we map the joints those modules use
+# to {name: (x, y, conf)}. Respects the frame's `valid` flag.
+_LANDMARK_IDX = {
+    'left_shoulder': 11, 'right_shoulder': 12,
+    'left_hip': 23, 'right_hip': 24,
+    'left_knee': 25, 'right_knee': 26,
+    'left_ankle': 27, 'right_ankle': 28,
+}
+
+def pose_frame_to_dict(pf):
+    """PoseFrame -> {joint_name: (x, y, visibility)} for the new engines."""
+    if pf is None or not getattr(pf, "valid", False):
+        return {}
+    kp  = getattr(pf, "keypoints", None)
+    vis = getattr(pf, "visibility", None)
+    if kp is None:
+        return {}
+    out = {}
+    n = len(kp)
+    for name, idx in _LANDMARK_IDX.items():
+        if idx < n:
+            v = float(vis[idx]) if vis is not None and idx < len(vis) else 1.0
+            out[name] = (float(kp[idx][0]), float(kp[idx][1]), v)
+    return out
+
+
 def render_tracking(placeholder, track):
     """Render the tracking-confidence gauge into a placeholder."""
     if track is None:
@@ -1066,7 +1094,8 @@ def run_analysis_pipeline(
         should_analyze = (frame_n % analyze_every == 0)
 
         # ── Upgrade (#6): rate the pose quality EVERY frame. ──
-        track = track_monitor.update(pose_frame)
+        pose_dict = pose_frame_to_dict(pose_frame)
+        track = track_monitor.update(pose_dict)
         st.session_state.last_track = track.as_dict()
 
         if should_analyze:
@@ -1078,7 +1107,7 @@ def run_analysis_pipeline(
             stride   = stride_counter.update(features)
             injury   = injury_scorer.update(features)
             # ── Upgrade (#2): gait phase metrics from raw landmarks. ──
-            gait     = gait_analyzer.update(pose_frame, t)
+            gait     = gait_analyzer.update(pose_dict, t)
 
             last_pred   = pred
             last_stride = stride
