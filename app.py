@@ -20,6 +20,10 @@ from src.models.explainability   import GradientExplainer
 from src.utils.session_manager   import SessionManager
 from src.utils.voice_coach       import VoiceCoach
 from src.utils.webcam_handler    import WebcamProcessor
+from src.coaching.corrective_cues   import CorrectiveCueEngine, CueSession, Severity
+from src.features.gait_phase        import GaitPhaseAnalyzer
+from src.utils.tracking_confidence  import TrackingConfidenceMonitor, TrackLevel
+from src.utils.fps_normalizer       import FPSNormalizer, LiveFPSEstimator
 
 # ── Page config ──
 st.set_page_config(
