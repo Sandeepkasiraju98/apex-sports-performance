@@ -82,20 +82,31 @@ html, body, [data-testid="stAppViewContainer"],
 #MainMenu, footer { visibility: hidden; }
 [data-testid="stToolbar"] { display: none; }
 
-/* ── Keep the sidebar and its toggle reachable at all times ── */
-/* Streamlit collapses the sidebar by translating it off-screen; forcing
-   transform:none keeps it on-screen even in the collapsed state. */
+/* ── Force sidebar visible & open across all Streamlit versions ── */
+/* Streamlit 1.58 collapses the sidebar to zero width; pinning an
+   explicit width + zeroing the transform/margin keeps it on-screen and
+   open regardless of the collapse state. */
+section[data-testid="stSidebar"],
 [data-testid="stSidebar"] {
   transform: none !important;
   visibility: visible !important;
+  min-width: 244px !important;
+  width: 244px !important;
+  margin-left: 0 !important;
+  left: 0 !important;
 }
-/* The collapse/expand arrow. The test id changed across Streamlit
-   versions, so target both spellings. */
+[data-testid="stSidebar"][aria-expanded="false"] {
+  transform: none !important;
+  margin-left: 0 !important;
+}
+/* The collapse/expand arrow. Test id varies across versions, so target
+   every spelling. */
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"] {
   visibility: visible !important;
   display: flex !important;
-  z-index: 9999 !important;
+  z-index: 999999 !important;
 }
 
 /* Scrollbar */
@@ -1358,7 +1369,7 @@ with st.sidebar:
     st.markdown("---")
 
     page = st.radio(
-        "", [
+        "Navigation", [
             "ANALYZE VIDEO",
             "LIVE WEBCAM",
             "MULTI-ATHLETE",
@@ -1425,11 +1436,8 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
 
-try:
-    load_models(voice_enabled=voice_on)
-except Exception as exc:
-    st.sidebar.error(f"Model load failed: {exc}")
-    st.error(f"Could not initialize models — check requirements.txt. Details: {exc}")
+
+load_models(voice_enabled=voice_on)
 
 
 # ══════════════════════════════════════════════════
